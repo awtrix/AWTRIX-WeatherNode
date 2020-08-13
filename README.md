@@ -1,0 +1,2 @@
+# AWTRIX-WeatherNode
+ 
