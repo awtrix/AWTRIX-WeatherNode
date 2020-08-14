@@ -9,12 +9,15 @@
 #include <Wire.h>
 #include <EEPROM.h>
 #include <StreamUtils.h>
+#include <FS.h>
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 CCS811 ccs811;
 Adafruit_BMP280 bmp280;
 Adafruit_Si7021 SI702x = Adafruit_Si7021();
+EepromStream eepromStream(0, 1024);
+
 unsigned long lastMsg = 0;
 float fVoltage;
 int i;
@@ -78,59 +81,60 @@ void sendDataAndSleep()
     if (debug)
         Serial.println("Sending message to Server");
     client.publish("awtrixnode/weather/data", JS.c_str());
-
+    delay(200);
     //Deepsleep
     if (debug)
         Serial.println("Going to Sleep now");
-    ESP.deepSleep(sleepinterval);
-    tone(2, 1000);
+    ESP.deepSleep(300e6);
 }
 
-void saveDefault()
+void saveSettings()
 {
-    DynamicJsonDocument doc(512);
-    EepromStream eepromStream(0, 512);
-    doc["ssid"] = ssid;
-    doc["password"] = password;
-    doc["server"] = awtrix_server;
-    doc["nodename"] = nodename;
-    doc["icon"] = iconID;
-    doc["sleep"] = sleepinterval;
-    serializeJson(doc, eepromStream);
-    eepromStream.flush();
-}
-
-void loadSettings()
-{
-    EEPROM.begin(512);
-    EepromStream eepromStream(0, 512);
-    DynamicJsonDocument doc(512);
-    DeserializationError error = deserializeJson(doc, eepromStream);
-    if (!error)
+    File configFile = SPIFFS.open("/settings.json", "w");
+    if (configFile)
     {
-        if (debug)
-            Serial.println("Loading settings");
-        ssid = doc["ssid"].as<char *>();
-        password = doc["password"].as<char *>();
-        awtrix_server = doc["server"].as<char *>();
-        nodename = doc["nodename"].as<char *>();
-        iconID = doc["icon"];
-        sleepinterval = doc["sleep"];
-    }
-    else
-    {
-        if (debug)
-            Serial.println("Save default settings to EEPROM");
-        DynamicJsonDocument doc(512);
-        EepromStream eepromStream(0, 512);
+        DynamicJsonDocument doc(1024);
         doc["ssid"] = ssid;
         doc["password"] = password;
         doc["server"] = awtrix_server;
         doc["nodename"] = nodename;
         doc["icon"] = iconID;
         doc["sleep"] = sleepinterval;
-        serializeJson(doc, eepromStream);
-        eepromStream.flush();
+        serializeJson(doc, configFile);
+        configFile.close();
+    }
+}
+
+void loadSettings()
+{
+    if (SPIFFS.begin())
+    {
+        //if file not exists
+        if (SPIFFS.exists("/settings.json"))
+        {
+            SPIFFS.open("/settings.json", "r");
+            File configFile = SPIFFS.open("/settings.json", "r");
+            size_t size = configFile.size();
+            // Allocate a buffer to store contents of the file.
+            std::unique_ptr<char[]> buf(new char[size]);
+            configFile.readBytes(buf.get(), size);
+            DynamicJsonDocument doc(1024);
+            DeserializationError error = deserializeJson(doc, buf.get());
+            if (!error)
+            {
+                ssid = doc["ssid"];
+                password = doc["password"];
+                awtrix_server = doc["server"];
+                nodename = doc["nodename"];
+                iconID = doc["icon"];
+                sleepinterval = doc["sleep"];
+            }
+            configFile.close();
+        }
+        else
+        {
+            saveSettings();
+        }
     }
 }
 
@@ -146,19 +150,19 @@ void callback(char *topic, byte *payload, unsigned int length)
         {
             if (doc.containsKey("ssid"))
             {
-                ssid = doc["ssid"].as<char *>();
+                ssid = doc["ssid"];
             }
             if (doc.containsKey("password"))
             {
-                password = doc["password"].as<char *>();
+                password = doc["password"];
             }
             if (doc.containsKey("server"))
             {
-                awtrix_server = doc["server"].as<char *>();
+                awtrix_server = doc["server"];
             }
             if (doc.containsKey("nodename"))
             {
-                nodename = doc["nodename"].as<char *>();
+                nodename = doc["nodename"];
             }
             if (doc.containsKey("icon"))
             {
@@ -168,7 +172,7 @@ void callback(char *topic, byte *payload, unsigned int length)
             {
                 sleepinterval = doc["sleep"];
             }
-            saveDefault();
+            saveSettings();
         }
         else
         {
@@ -181,6 +185,10 @@ void callback(char *topic, byte *payload, unsigned int length)
     }
 }
 
+void eraseEEPROM()
+{
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -189,9 +197,13 @@ void setup()
     WiFi.begin(ssid, password);
     if (debug)
         Serial.println("Connecting to Wifi");
+    Serial.println(ssid);
+    Serial.println(password);
     while (WiFi.status() != WL_CONNECTED)
     {
-        delay(50);
+        if (debug)
+            Serial.println("...");
+        delay(500);
     }
     if (debug)
         Serial.println("Wifi connected");
