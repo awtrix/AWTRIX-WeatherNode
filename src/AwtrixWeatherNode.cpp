@@ -10,6 +10,7 @@
 #include <EEPROM.h>
 #include <StreamUtils.h>
 #include <FS.h>
+#include <SPI.h>
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -90,52 +91,52 @@ void sendDataAndSleep()
 
 void saveSettings()
 {
-    File configFile = SPIFFS.open("/settings.json", "w");
-    if (configFile)
-    {
-        DynamicJsonDocument doc(1024);
-        doc["ssid"] = ssid;
-        doc["password"] = password;
-        doc["server"] = awtrix_server;
-        doc["nodename"] = nodename;
-        doc["icon"] = iconID;
-        doc["sleep"] = sleepinterval;
-        serializeJson(doc, configFile);
-        configFile.close();
-    }
+    File configFile = SPIFFS.open("settings.json", "w");
+    DynamicJsonDocument doc(1024);
+    doc["ssid"] = ssid;
+    doc["password"] = password;
+    doc["server"] = awtrix_server;
+    doc["nodename"] = nodename;
+    doc["icon"] = iconID;
+    doc["sleep"] = sleepinterval;
+    serializeJson(doc, configFile);
+    configFile.close();
 }
 
 void loadSettings()
 {
-    if (SPIFFS.begin())
+    //if file not exists
+    if (SPIFFS.exists("settings.json"))
     {
-        //if file not exists
-        if (SPIFFS.exists("/settings.json"))
+        Serial.println("loading settings");
+        SPIFFS.open("settings.json", "r");
+        File configFile = SPIFFS.open("settings.json", "r");
+        // Allocate a buffer to store contents of the file.
+        DynamicJsonDocument doc(1024);
+        DeserializationError error = deserializeJson(doc, configFile);
+        if (!error)
         {
-            SPIFFS.open("/settings.json", "r");
-            File configFile = SPIFFS.open("/settings.json", "r");
-            size_t size = configFile.size();
-            // Allocate a buffer to store contents of the file.
-            std::unique_ptr<char[]> buf(new char[size]);
-            configFile.readBytes(buf.get(), size);
-            DynamicJsonDocument doc(1024);
-            DeserializationError error = deserializeJson(doc, buf.get());
-            if (!error)
-            {
-                ssid = doc["ssid"];
-                password = doc["password"];
-                awtrix_server = doc["server"];
-                nodename = doc["nodename"];
-                iconID = doc["icon"];
-                sleepinterval = doc["sleep"];
-            }
-            configFile.close();
+            ssid = doc["ssid"];
+            password = doc["password"];
+            awtrix_server = doc["server"];
+            nodename = doc["nodename"];
+            iconID = doc["icon"];
+            sleepinterval = doc["sleep"];
         }
         else
         {
-            saveSettings();
+            Serial.println(F("Error: deserializeJson"));
+            Serial.println(error.c_str());
         }
+        configFile.close();
     }
+    else
+    {
+        Serial.println("loading default");
+        saveSettings();
+    }
+    if (debug)
+        Serial.println(nodename);
 }
 
 void callback(char *topic, byte *payload, unsigned int length)
@@ -144,6 +145,8 @@ void callback(char *topic, byte *payload, unsigned int length)
     String channel = String(topic).substring(last);
     if (channel.equals(F("newData")))
     {
+        if (debug)
+            Serial.println("got message");
         DynamicJsonDocument doc(1024);
         DeserializationError error = deserializeJson(doc, payload);
         if (!error)
@@ -163,6 +166,7 @@ void callback(char *topic, byte *payload, unsigned int length)
             if (doc.containsKey("nodename"))
             {
                 nodename = doc["nodename"];
+                Serial.println(nodename);
             }
             if (doc.containsKey("icon"))
             {
@@ -185,13 +189,10 @@ void callback(char *topic, byte *payload, unsigned int length)
     }
 }
 
-void eraseEEPROM()
-{
-}
-
 void setup()
 {
     Serial.begin(115200);
+    SPIFFS.begin();
     loadSettings();
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
