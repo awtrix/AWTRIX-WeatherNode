@@ -162,7 +162,6 @@ void callback(char *topic, byte *payload, unsigned int length)
             if (doc.containsKey("nodename"))
             {
                 nodename = doc["nodename"];
-                Serial.println(nodename);
             }
             if (doc.containsKey("icon"))
             {
