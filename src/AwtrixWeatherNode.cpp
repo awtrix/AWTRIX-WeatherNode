@@ -7,17 +7,13 @@
 #include "Adafruit_Si7021.h"
 #include "Adafruit_BMP280.h"
 #include <Wire.h>
-#include <EEPROM.h>
-#include <StreamUtils.h>
 #include <FS.h>
-#include <SPI.h>
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 CCS811 ccs811;
 Adafruit_BMP280 bmp280;
 Adafruit_Si7021 SI702x = Adafruit_Si7021();
-EepromStream eepromStream(0, 1024);
 
 unsigned long lastMsg = 0;
 float fVoltage;
@@ -91,7 +87,6 @@ void sendDataAndSleep()
 
 void saveSettings()
 {
-    File configFile = SPIFFS.open("settings.json", "w");
     DynamicJsonDocument doc(1024);
     doc["ssid"] = ssid;
     doc["password"] = password;
@@ -99,6 +94,8 @@ void saveSettings()
     doc["nodename"] = nodename;
     doc["icon"] = iconID;
     doc["sleep"] = sleepinterval;
+    Serial.println("save settings");
+    File configFile = SPIFFS.open("settings.json", "w+");
     serializeJson(doc, configFile);
     configFile.close();
 }
@@ -109,7 +106,6 @@ void loadSettings()
     if (SPIFFS.exists("settings.json"))
     {
         Serial.println("loading settings");
-        SPIFFS.open("settings.json", "r");
         File configFile = SPIFFS.open("settings.json", "r");
         // Allocate a buffer to store contents of the file.
         DynamicJsonDocument doc(1024);
