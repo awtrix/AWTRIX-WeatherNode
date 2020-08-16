@@ -95,7 +95,7 @@ void saveSettings()
     doc["icon"] = iconID;
     doc["sleep"] = sleepinterval;
     Serial.println("save settings");
-    File configFile = SPIFFS.open("settings.json", "w+");
+    File configFile = SPIFFS.open("/settings.json", "w+");
     serializeJson(doc, configFile);
     configFile.close();
 }
@@ -103,10 +103,10 @@ void saveSettings()
 void loadSettings()
 {
     //if file not exists
-    if (SPIFFS.exists("settings.json"))
+    if (SPIFFS.exists("/settings.json"))
     {
         Serial.println("loading settings");
-        File configFile = SPIFFS.open("settings.json", "r");
+        File configFile = SPIFFS.open("/settings.json", "r");
         // Allocate a buffer to store contents of the file.
         DynamicJsonDocument doc(1024);
         DeserializationError error = deserializeJson(doc, configFile);
