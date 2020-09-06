@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 #include "node-conf.h"
 #include "ccs811.h"
-#include "Adafruit_Si7021.h"
+#include "ClosedCube_HDC1080.h"
 #include "Adafruit_BMP280.h"
 #include <Wire.h>
 #include <FS.h>
@@ -13,7 +13,7 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 CCS811 ccs811;
 Adafruit_BMP280 bmp280;
-Adafruit_Si7021 SI702x = Adafruit_Si7021();
+ClosedCube_HDC1080 hdc1080;
 
 unsigned long lastMsg = 0;
 float fVoltage;
@@ -46,29 +46,22 @@ float fVoltageMatrix[22][2] = {
 void sendDataAndSleep()
 {
     //Start I2C and Sensors
-    Wire.begin(D2, D1);
+    Wire.begin();
     ccs811.set_i2cdelay(50);
-    if (!ccs811.begin())
-    {
-        Serial.println("Failed to start sensor! Please check your wiring.");
-        while (true)
-            ;
-    }
-    bool ok = ccs811.start(CCS811_MODE_1SEC);
-    if (!ok)
-        Serial.println("setup: CCS811 start FAILED");
+    ccs811.begin();
+    ccs811.start(CCS811_MODE_1SEC);
     bmp280.begin(0x76);
-    SI702x.begin();
-    delay(1000);
+    hdc1080.begin(0x40);
+
     //Build JSON
     DynamicJsonDocument doc(300);
     doc["Name"] = nodename;
-    double temp = 
-    double hum = 0;
+    float temp = bmp280.readTemperature();
+    double hum = hdc1080.readHumidity();
     doc["Temp"] = temp;
-    doc["Hum"] = SI702x.readHumidity();
+    doc["Hum"] = hum;
     doc["Pres"] = (bmp280.readPressure() / 100);
-    ccs811.set_envdata(bmp280.readTemperature(), SI702x.readHumidity());
+    ccs811.set_envdata(temp, hum);
     uint16_t eco2, etvoc, errstat, raw;
     ccs811.read(&eco2, &etvoc, &errstat, &raw);
     if (errstat == CCS811_ERRSTAT_OK)
@@ -80,10 +73,11 @@ void sendDataAndSleep()
     doc["BatPerc"] = perc;
     String JS;
     serializeJson(doc, JS);
-Serial.println(JS);
+
     //Send JSON to Server
     if (debug)
         Serial.println("Sending message to Server");
+    Serial.println(JS.c_str());
     client.publish("awtrixnode/weather/data", JS.c_str());
     delay(200);
     //Deepsleep
@@ -141,7 +135,6 @@ void loadSettings()
     if (debug)
         Serial.println(nodename);
 }
-
 void callback(char *topic, byte *payload, unsigned int length)
 {
     int last = String(topic).lastIndexOf(F("/")) + 1;
@@ -193,7 +186,7 @@ void callback(char *topic, byte *payload, unsigned int length)
 
 void setup()
 {
-    Serial.begin(9600);
+    Serial.begin(115200);
     SPIFFS.begin();
     loadSettings();
     WiFi.mode(WIFI_STA);
