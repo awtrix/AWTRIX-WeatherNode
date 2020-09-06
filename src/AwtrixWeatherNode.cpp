@@ -46,22 +46,29 @@ float fVoltageMatrix[22][2] = {
 void sendDataAndSleep()
 {
     //Start I2C and Sensors
-    Wire.begin(21, 22);
+    Wire.begin(D2, D1);
     ccs811.set_i2cdelay(50);
-    ccs811.begin();
-    ccs811.start(CCS811_MODE_1SEC);
+    if (!ccs811.begin())
+    {
+        Serial.println("Failed to start sensor! Please check your wiring.");
+        while (true)
+            ;
+    }
+    bool ok = ccs811.start(CCS811_MODE_1SEC);
+    if (!ok)
+        Serial.println("setup: CCS811 start FAILED");
     bmp280.begin(0x76);
     SI702x.begin();
-
+    delay(1000);
     //Build JSON
     DynamicJsonDocument doc(300);
     doc["Name"] = nodename;
-    double temp = bmp280.readTemperature();
-    double hum = SI702x.readHumidity();
+    double temp = 
+    double hum = 0;
     doc["Temp"] = temp;
-    doc["Hum"] = hum;
+    doc["Hum"] = SI702x.readHumidity();
     doc["Pres"] = (bmp280.readPressure() / 100);
-    ccs811.set_envdata(temp, hum);
+    ccs811.set_envdata(bmp280.readTemperature(), SI702x.readHumidity());
     uint16_t eco2, etvoc, errstat, raw;
     ccs811.read(&eco2, &etvoc, &errstat, &raw);
     if (errstat == CCS811_ERRSTAT_OK)
@@ -73,7 +80,7 @@ void sendDataAndSleep()
     doc["BatPerc"] = perc;
     String JS;
     serializeJson(doc, JS);
-
+Serial.println(JS);
     //Send JSON to Server
     if (debug)
         Serial.println("Sending message to Server");
@@ -186,7 +193,7 @@ void callback(char *topic, byte *payload, unsigned int length)
 
 void setup()
 {
-    Serial.begin(115200);
+    Serial.begin(9600);
     SPIFFS.begin();
     loadSettings();
     WiFi.mode(WIFI_STA);
